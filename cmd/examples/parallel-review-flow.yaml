@@ -1,0 +1,144 @@
+apiVersion: aip/v0.1
+kind: Flow
+metadata:
+  name: parallel-review
+  title: Parallel Review with Human Approval
+  version: "1.0"
+  description: Three reviewers analyze in parallel, findings are merged, human approves or requests retry (max 2)
+
+participants:
+  - id: reviewer-a
+    kind: agent
+    title: Reviewer A
+    description: Analyzes from security perspective
+
+  - id: reviewer-b
+    kind: agent
+    title: Reviewer B
+    description: Analyzes from performance perspective
+
+  - id: reviewer-c
+    kind: agent
+    title: Reviewer C
+    description: Analyzes from correctness perspective
+
+  - id: merger
+    kind: agent
+    title: Findings Merger
+    description: Consolidates review findings into a unified report
+
+  - id: human-approver
+    kind: human
+    title: Human Approver
+    description: Reviews merged findings and approves or requests changes
+
+artifacts:
+  - ref: aip://artifact/input
+    contentType: text/markdown
+    title: Input Document
+    consumers: [reviewer-a, reviewer-b, reviewer-c]
+    required: true
+
+  - ref: aip://artifact/review-a
+    contentType: text/markdown
+    producer: reviewer-a
+    consumers: [merger]
+
+  - ref: aip://artifact/review-b
+    contentType: text/markdown
+    producer: reviewer-b
+    consumers: [merger]
+
+  - ref: aip://artifact/review-c
+    contentType: text/markdown
+    producer: reviewer-c
+    consumers: [merger]
+
+  - ref: aip://artifact/merged-report
+    contentType: text/markdown
+    producer: merger
+    consumers: [human-approver]
+
+  - ref: aip://artifact/approval
+    contentType: application/json
+    producer: human-approver
+
+steps:
+  - id: review
+    type: fanOut
+    title: Review
+    steps:
+      - review-a
+      - review-b
+      - review-c
+
+  - id: review-a
+    type: action
+    title: Security Review
+    participantRef: reviewer-a
+    consumes:
+      - aip://artifact/input
+    produces:
+      - aip://artifact/review-a
+
+  - id: review-b
+    type: action
+    title: Performance Review
+    participantRef: reviewer-b
+    consumes:
+      - aip://artifact/input
+    produces:
+      - aip://artifact/review-b
+
+  - id: review-c
+    type: action
+    title: Correctness Review
+    participantRef: reviewer-c
+    consumes:
+      - aip://artifact/input
+    produces:
+      - aip://artifact/review-c
+
+  - id: collect-reviews
+    type: fanIn
+    title: Collect Reviews
+    dependsOn: [review]
+    operator:
+      type: merge
+      mode: append
+
+  - id: merge-findings
+    type: action
+    title: Merge Findings
+    participantRef: merger
+    dependsOn: [collect-reviews]
+    consumes:
+      - aip://artifact/review-a
+      - aip://artifact/review-b
+      - aip://artifact/review-c
+    produces:
+      - aip://artifact/merged-report
+
+  - id: await-approval
+    type: await
+    title: Await Approval
+    dependsOn: [merge-findings]
+    awaitInput:
+      ref: aip://artifact/approval
+      contentType: application/json
+      sourceParticipantRef: human-approver
+      description: Human reviews merged findings and approves or rejects
+    iteration:
+      mode: bounded
+      maxIterations: 2
+      strategy: serial
+      outputMode: replace
+      onItemFailure: stop
+
+  - id: done
+    type: exit
+    title: Done
+    dependsOn: [await-approval]
+    exit:
+      status: success
+      message: Review approved

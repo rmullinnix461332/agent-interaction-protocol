@@ -1,0 +1,161 @@
+apiVersion: aip/v0.1
+kind: Flow
+metadata:
+  name: dual-fanout
+  title: Dual Fan-Out with Fan-In
+  version: "1.0"
+  description: Two fan-out stages converging into a single fan-in
+
+participants:
+  - id: coordinator
+    kind: agent
+    title: Coordinator
+    description: Kicks off the workflow
+
+  - id: researcher-a
+    kind: agent
+    title: Researcher A
+    description: Researches topic A
+
+  - id: researcher-b
+    kind: agent
+    title: Researcher B
+    description: Researches topic B
+
+  - id: researcher-c
+    kind: agent
+    title: Researcher C
+    description: Researches topic C
+
+  - id: analyst-x
+    kind: agent
+    title: Analyst X
+    description: Analyzes from perspective X
+
+  - id: analyst-y
+    kind: agent
+    title: Analyst Y
+    description: Analyzes from perspective Y
+
+  - id: synthesizer
+    kind: agent
+    title: Synthesizer
+    description: Merges all analysis into final output
+
+artifacts:
+  - ref: aip://artifact/brief
+    producer: coordinator
+    consumers: [researcher-a, researcher-b, researcher-c]
+
+  - ref: aip://artifact/research-a
+    producer: researcher-a
+    consumers: [analyst-x, analyst-y]
+
+  - ref: aip://artifact/research-b
+    producer: researcher-b
+    consumers: [analyst-x, analyst-y]
+
+  - ref: aip://artifact/research-c
+    producer: researcher-c
+    consumers: [analyst-x, analyst-y]
+
+  - ref: aip://artifact/analysis-x
+    producer: analyst-x
+    consumers: [synthesizer]
+
+  - ref: aip://artifact/analysis-y
+    producer: analyst-y
+    consumers: [synthesizer]
+
+  - ref: aip://artifact/final-report
+    producer: synthesizer
+
+steps:
+  - id: kickoff
+    type: action
+    title: Kickoff
+    participantRef: coordinator
+    produces:
+      - aip://artifact/brief
+
+  - id: research
+    type: fanOut
+    dependsOn: [kickoff]
+    steps:
+      - research-a
+      - research-b
+      - research-c
+
+  - id: research-a
+    type: action
+    title: Research A
+    participantRef: researcher-a
+    consumes:
+      - aip://artifact/brief
+    produces:
+      - aip://artifact/research-a
+
+  - id: research-b
+    type: action
+    title: Research B
+    participantRef: researcher-b
+    consumes:
+      - aip://artifact/brief
+    produces:
+      - aip://artifact/research-b
+
+  - id: research-c
+    type: action
+    title: Research C
+    participantRef: researcher-c
+    consumes:
+      - aip://artifact/brief
+    produces:
+      - aip://artifact/research-c
+
+  - id: research-complete
+    type: fanIn
+    dependsOn: [research]
+
+  - id: analyze-x
+    type: action
+    title: Analyze X
+    participantRef: analyst-x
+    dependsOn: [research-complete]
+    consumes:
+      - aip://artifact/research-a
+      - aip://artifact/research-b
+      - aip://artifact/research-c
+    produces:
+      - aip://artifact/analysis-x
+
+  - id: analyze-y
+    type: action
+    title: Analyze Y
+    participantRef: analyst-y
+    dependsOn: [research-complete]
+    consumes:
+      - aip://artifact/research-a
+      - aip://artifact/research-b
+      - aip://artifact/research-c
+    produces:
+      - aip://artifact/analysis-y
+
+  - id: synthesize
+    type: action
+    title: Synthesize
+    participantRef: synthesizer
+    dependsOn: [analyze-x, analyze-y]
+    consumes:
+      - aip://artifact/analysis-x
+      - aip://artifact/analysis-y
+    produces:
+      - aip://artifact/final-report
+
+  - id: done
+    type: exit
+    title: Done
+    dependsOn: [synthesize]
+    exit:
+      status: success
+      message: Dual fan-out complete

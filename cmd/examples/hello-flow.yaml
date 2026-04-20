@@ -1,0 +1,57 @@
+apiVersion: aip/v0.1
+kind: Flow
+metadata:
+  name: hello-world
+  title: Hello World Flow
+  version: "1.0"
+  description: A minimal example flow for testing the CLI
+
+participants:
+  - id: writer
+    kind: agent
+    title: Content Writer
+    description: Writes initial content
+
+  - id: reviewer
+    kind: agent
+    title: Content Reviewer
+    description: Reviews and provides feedback
+
+artifacts:
+  - ref: aip://artifact/draft
+    contentType: text/markdown
+    title: Draft Document
+    producer: writer
+    consumers: [reviewer]
+
+  - ref: aip://artifact/review
+    contentType: text/markdown
+    title: Review Feedback
+    producer: reviewer
+    consumers: [writer]
+
+steps:
+  - id: write-draft
+    type: action
+    title: Write Draft
+    participantRef: writer
+    produces:
+      - aip://artifact/draft
+
+  - id: review-draft
+    type: action
+    title: Review Draft
+    participantRef: reviewer
+    dependsOn: [write-draft]
+    consumes:
+      - aip://artifact/draft
+    produces:
+      - aip://artifact/review
+
+  - id: done
+    type: exit
+    title: Complete
+    dependsOn: [review-draft]
+    exit:
+      status: success
+      message: Flow completed successfully

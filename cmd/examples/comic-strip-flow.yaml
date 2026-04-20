@@ -1,0 +1,193 @@
+apiVersion: aip/v0.1
+kind: Flow
+metadata:
+  name: comic-strip
+  title: Comic Strip Creation
+  version: "2.0"
+  description: >
+    End-to-end comic strip workflow — narrative, layout, asset production subflow,
+    AI review with rework loop (re-invokes subflow), and human approval
+
+participants:
+  - id: narrator
+    kind: agent
+    title: Narrative Writer
+    description: Defines story arc, dialogue, and panel descriptions
+
+  - id: layout-designer
+    kind: agent
+    title: Layout Designer
+    description: Determines panel grid, sizing, and reading flow
+
+  - id: asset-production
+    kind: subflow
+    title: Asset Production
+    description: Generates or fixes panels and text in parallel, assembles into composite strip
+    flowRef: asset-production-subflow.yaml
+    version: "1.1"
+
+  - id: ai-reviewer
+    kind: agent
+    title: AI Reviewer
+    description: Reviews assembled strip for visual/narrative coherence
+
+  - id: reviser
+    kind: agent
+    title: Reviser
+    description: Applies final polish based on human feedback
+
+  - id: human-reviewer
+    kind: human
+    title: Human Reviewer
+    description: Final approval or revision requests
+
+artifacts:
+  - ref: aip://artifact/narrative
+    contentType: text/markdown
+    producer: narrator
+    consumers: [layout-designer, asset-production]
+
+  - ref: aip://artifact/layout
+    contentType: application/json
+    producer: layout-designer
+    consumers: [asset-production]
+
+  - ref: aip://artifact/assembled-strip
+    contentType: image/png
+    producer: asset-production
+    consumers: [ai-reviewer, human-reviewer, reviser]
+
+  - ref: aip://artifact/panels
+    contentType: image/png
+    title: Image Panels
+    producer: asset-production
+    consumers: [ai-reviewer]
+
+  - ref: aip://artifact/text-overlays
+    contentType: application/json
+    title: Text and Callouts
+    producer: asset-production
+    consumers: [ai-reviewer]
+
+  - ref: aip://artifact/review-report
+    contentType: application/json
+    producer: ai-reviewer
+    consumers: [asset-production]
+
+  - ref: aip://artifact/human-feedback
+    contentType: text/markdown
+    producer: human-reviewer
+    consumers: [reviser]
+
+  - ref: aip://artifact/final-strip
+    contentType: image/png
+    producer: reviser
+
+steps:
+  # --- Narrative & Layout ---
+  - id: define-narrative
+    type: action
+    title: Define Narrative
+    participantRef: narrator
+    produces:
+      - aip://artifact/narrative
+
+  - id: define-layout
+    type: action
+    title: Define Layout
+    participantRef: layout-designer
+    dependsOn: [define-narrative]
+    consumes:
+      - aip://artifact/narrative
+    produces:
+      - aip://artifact/layout
+
+  # --- Initial Asset Production (subflow: generate) ---
+  - id: produce-assets
+    type: action
+    title: Produce Assets
+    participantRef: asset-production
+    dependsOn: [define-layout]
+    consumes:
+      - aip://artifact/narrative
+      - aip://artifact/layout
+    produces:
+      - aip://artifact/panels
+      - aip://artifact/text-overlays
+      - aip://artifact/assembled-strip
+
+  # --- AI Review ---
+  - id: ai-review
+    type: action
+    title: AI Review
+    participantRef: ai-reviewer
+    dependsOn: [produce-assets]
+    consumes:
+      - aip://artifact/assembled-strip
+      - aip://artifact/panels
+      - aip://artifact/text-overlays
+    produces:
+      - aip://artifact/review-report
+
+  # --- Rework via subflow (fix + reassemble) ---
+  - id: rework-assets
+    type: action
+    title: Rework Assets
+    description: Re-invokes asset-production subflow with review-report to fix flagged panels/text
+    participantRef: asset-production
+    dependsOn: [ai-review]
+    consumes:
+      - aip://artifact/narrative
+      - aip://artifact/layout
+      - aip://artifact/review-report
+    produces:
+      - aip://artifact/panels
+      - aip://artifact/text-overlays
+      - aip://artifact/assembled-strip
+    iteration:
+      mode: while
+      condition:
+        reviewResult: not-approved
+      strategy: serial
+      outputMode: replace
+      onItemFailure: stop
+      maxIterations: 3
+
+  # --- Human Approval Loop ---
+  - id: await-human
+    type: await
+    title: Await Human Review
+    dependsOn: [rework-assets]
+    awaitInput:
+      ref: aip://artifact/human-feedback
+      contentType: text/markdown
+      sourceParticipantRef: human-reviewer
+      description: Human reviews the assembled comic strip
+
+  - id: revise
+    type: action
+    title: Revise
+    participantRef: reviser
+    dependsOn: [await-human]
+    consumes:
+      - aip://artifact/assembled-strip
+      - aip://artifact/human-feedback
+    produces:
+      - aip://artifact/final-strip
+    iteration:
+      mode: while
+      condition:
+        approval: pending
+      strategy: serial
+      outputMode: replace
+      onItemFailure: stop
+      maxIterations: 5
+      timeout: PT48H
+
+  - id: done
+    type: exit
+    title: Published
+    dependsOn: [revise]
+    exit:
+      status: success
+      message: Comic strip approved and published

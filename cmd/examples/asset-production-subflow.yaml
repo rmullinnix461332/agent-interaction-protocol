@@ -1,0 +1,119 @@
+apiVersion: aip/v0.1
+kind: Flow
+metadata:
+  name: asset-production
+  title: Asset Production Subflow
+  version: "1.1"
+  description: >
+    Generates or updates image panels and text overlays in parallel, then assembles
+    into a composite strip. Accepts optional review-report to drive targeted rework
+    of images and/or text before reassembly.
+
+participants:
+  - id: image-gen
+    kind: agent
+    title: Image Generator
+    description: Produces or updates artwork for each panel
+
+  - id: text-composer
+    kind: agent
+    title: Text Composer
+    description: Creates or updates speech bubbles, captions, and callouts
+
+  - id: assembler
+    kind: agent
+    title: Assembler
+    description: Composites panels, text, and layout into final strip
+
+artifacts:
+  # --- Inputs ---
+  - ref: aip://artifact/narrative
+    contentType: text/markdown
+    consumers: [image-gen, text-composer]
+    required: true
+
+  - ref: aip://artifact/layout
+    contentType: application/json
+    consumers: [image-gen, text-composer, assembler]
+    required: true
+
+  - ref: aip://artifact/review-report
+    contentType: application/json
+    title: Review Report (optional — triggers rework mode)
+    consumers: [image-gen, text-composer]
+
+  # --- Outputs ---
+  - ref: aip://artifact/panels
+    contentType: image/png
+    title: Image Panels
+    producer: image-gen
+    consumers: [assembler]
+
+  - ref: aip://artifact/text-overlays
+    contentType: application/json
+    title: Text and Callouts
+    producer: text-composer
+    consumers: [assembler]
+
+  - ref: aip://artifact/assembled-strip
+    contentType: image/png
+    producer: assembler
+
+steps:
+  - id: asset-gen
+    type: fanOut
+    title: Generate/Fix Assets
+    steps:
+      - gen-panels
+      - gen-text
+
+  - id: gen-panels
+    type: action
+    title: Generate/Fix Panels
+    description: Creates new panels or reworks flagged panels based on review-report
+    participantRef: image-gen
+    consumes:
+      - aip://artifact/narrative
+      - aip://artifact/layout
+      - aip://artifact/review-report
+    produces:
+      - aip://artifact/panels
+
+  - id: gen-text
+    type: action
+    title: Generate/Fix Text
+    description: Creates new text overlays or reworks flagged text based on review-report
+    participantRef: text-composer
+    consumes:
+      - aip://artifact/narrative
+      - aip://artifact/layout
+      - aip://artifact/review-report
+    produces:
+      - aip://artifact/text-overlays
+
+  - id: asset-join
+    type: fanIn
+    title: Collect Assets
+    dependsOn: [asset-gen]
+    operator:
+      type: merge
+      mode: composite
+
+  - id: assemble
+    type: action
+    title: Assemble Strip
+    participantRef: assembler
+    dependsOn: [asset-join]
+    consumes:
+      - aip://artifact/layout
+      - aip://artifact/panels
+      - aip://artifact/text-overlays
+    produces:
+      - aip://artifact/assembled-strip
+
+  - id: done
+    type: exit
+    title: Complete
+    dependsOn: [assemble]
+    exit:
+      status: success
