@@ -1,0 +1,422 @@
+# AIP Specification — 02 Artifacts (Draft v0.2)
+
+## 1. Purpose
+
+Artifacts are the **typed data objects exchanged between steps and participants** within an AIP flow.
+
+Artifacts represent:
+
+* inputs
+* outputs
+* intermediate results
+* externally supplied values
+* reusable references
+
+Artifacts answer the question:
+
+> **What flows through the system?**
+
+---
+
+## 2. Design Principles
+
+### 2.1 Explicit Data Flow
+
+Meaningful data exchange should be represented as artifacts rather than hidden provider state.
+
+### 2.2 Interoperability Over Rigidity
+
+Artifacts should declare enough information for downstream participants to consume them, without forcing every artifact into rigid schemas.
+
+### 2.3 Provider Neutrality
+
+AIP defines artifact identity and meaning, not storage mechanism.
+
+### 2.4 Traceability
+
+Artifacts should support lineage:
+
+* where produced
+* where consumed
+* how transformed
+
+### 2.5 Human + Machine Friendly
+
+Artifacts may be designed for:
+
+* human consumption
+* machine consumption
+* mixed consumption
+
+---
+
+## 3. Core Fields
+
+Recommended artifact structure:
+
+```yaml id="0by1po"
+artifacts:
+  - ref: aip://artifact/story-outline
+    contentType: text/markdown
+```
+
+### Field Definitions
+
+| Field       | Required    | Description                                   |
+| ----------- | ----------- | --------------------------------------------- |
+| ref         | Yes         | Canonical provider-neutral artifact reference |
+| contentType | Recommended | MIME-style content format                     |
+| contractRef | No          | Optional structural or semantic contract      |
+| title       | No          | Human-readable label                          |
+| description | No          | Summary of artifact purpose                   |
+| producer    | No          | Producing step or participant                 |
+| consumers   | No          | Known downstream consumers                    |
+| required    | No          | Whether artifact must be present              |
+
+---
+
+## 4. Canonical References
+
+Artifacts use provider-neutral references.
+
+Examples:
+
+```text id="1jx8ia"
+aip://artifact/story-outline
+aip://artifact/panel-options
+aip://artifact/final-comic
+aip://input/editor/decision
+aip://output/review/top-choice
+```
+
+---
+
+## 5. Reference Conventions
+
+Suggested categories:
+
+| Prefix               | Meaning                               |
+| -------------------- | ------------------------------------- |
+| `aip://artifact/...` | General artifact                      |
+| `aip://input/...`    | Required external input               |
+| `aip://output/...`   | Final or externally meaningful output |
+| `aip://temp/...`     | Ephemeral intermediate artifact       |
+
+These are conventions, not hard protocol requirements.
+
+---
+
+## 6. Content Types
+
+Artifacts should preferably declare `contentType`.
+
+Examples:
+
+```yaml id="8nqlsv"
+contentType: text/markdown
+```
+
+```yaml id="pp0du6"
+contentType: application/json
+```
+
+```yaml id="94o65w"
+contentType: text/x-python
+```
+
+```yaml id="u3t2mg"
+contentType: image/png
+```
+
+Common values:
+
+| Content Type     | Typical Use                      |
+| ---------------- | -------------------------------- |
+| text/markdown    | Plans, summaries, drafts, notes  |
+| text/plain       | Raw text                         |
+| application/json | Structured machine payload       |
+| application/yaml | Human-editable structured config |
+| text/x-diff      | Code patches                     |
+| text/x-python    | Source code                      |
+| image/png        | Images                           |
+| application/pdf  | Final documents                  |
+
+### Recommended Default
+
+If omitted, providers may assume:
+
+```text id="b9s89j"
+text/markdown
+```
+
+for human-readable artifacts.
+
+---
+
+## 7. Contract References
+
+Artifacts may optionally declare a `contractRef`.
+
+A contract describes expected structure, semantics, or validation.
+
+Examples:
+
+```yaml id="it4v8d"
+contractRef: schemas/review.schema.json
+```
+
+```yaml id="uxjnl6"
+contractRef: contracts/editor-decision.md
+```
+
+```yaml id="17cs4m"
+contractRef: openapi/components/schemas/Ticket
+```
+
+Possible contract forms:
+
+* JSON Schema
+* OpenAPI schema component
+* protobuf
+* Avro
+* markdown template
+* CSV column definition
+* custom provider schema
+
+Contracts are optional and used only when stronger structure is useful.
+
+---
+
+## 8. Producer and Consumer Relationships
+
+Artifacts may declare lineage relationships.
+
+Example:
+
+```yaml id="1i9th7"
+- ref: aip://artifact/review-notes
+  contentType: text/markdown
+  producer: code-review
+  consumers:
+    - merge-findings
+```
+
+Benefits:
+
+* observability
+* debugging
+* optimization
+* auditability
+
+---
+
+## 9. Required Artifacts
+
+Artifacts may be marked required.
+
+Example:
+
+```yaml id="n7av1d"
+- ref: aip://input/editor/decision
+  contentType: application/json
+  required: true
+```
+
+Typical uses:
+
+* await input
+* required config
+* mandatory deliverables
+
+---
+
+## 10. Artifact Lifecycle Categories
+
+---
+
+### 10.1 Input Artifacts
+
+Supplied into flow.
+
+Examples:
+
+* user prompt
+* repo path list
+* style guide
+* approval choice
+
+---
+
+### 10.2 Intermediate Artifacts
+
+Produced and consumed during orchestration.
+
+Examples:
+
+* outline draft
+* ranked choices
+* review notes
+* generated options
+
+---
+
+### 10.3 Output Artifacts
+
+Final externally meaningful deliverables.
+
+Examples:
+
+* code patch
+* published comic strip
+* generated report
+* deployment recommendation
+
+---
+
+### 10.4 Temporary Artifacts
+
+Ephemeral provider-managed objects.
+
+Examples:
+
+* cached reductions
+* scratch transforms
+* staging outputs
+
+---
+
+## 11. Artifacts in Steps
+
+Steps consume and produce artifacts.
+
+Example:
+
+```yaml id="68m9sl"
+steps:
+  - id: generate-dialogue
+    type: action
+    participantRef: writer
+    consumes:
+      - aip://artifact/story-outline
+    produces:
+      - aip://artifact/dialogue-options
+```
+
+---
+
+## 12. Await Inputs as Artifacts
+
+Await uses explicit artifacts for required input.
+
+Example:
+
+```yaml id="iv9xj7"
+- id: editor-review
+  type: await
+  awaitInput:
+    ref: aip://input/editor/decision
+    contentType: application/json
+    contractRef: schemas/editorDecision.schema.json
+```
+
+This preserves:
+
+* explicit pause contract
+* resumability
+* validation when desired
+
+---
+
+## 13. Storage Neutrality
+
+Artifacts may be physically stored in:
+
+* memory
+* object stores
+* databases
+* files
+* git repositories
+* provider stores
+* message payloads
+
+AIP does not prescribe storage model.
+
+---
+
+## 14. Large Artifact Strategy
+
+Large artifacts may be represented by references instead of inline payloads.
+
+Examples:
+
+* file URI
+* object key
+* dataset handle
+* image asset path
+
+This allows provider optimization.
+
+---
+
+## 15. Validation
+
+Artifacts are valid when:
+
+* `ref` is well formed
+* content is compatible with `contentType`
+* required artifacts are present
+* contract is satisfied when declared
+
+---
+
+## 16. Non-Goals
+
+Artifacts do not define:
+
+* transport protocol
+* storage engine
+* participant logic
+* UI rendering rules
+* business ownership policy
+
+---
+
+## 17. Example
+
+```yaml id="w5p10h"
+artifacts:
+  - ref: aip://artifact/story-outline
+    contentType: text/markdown
+
+  - ref: aip://artifact/dialogue-options
+    contentType: text/markdown
+
+  - ref: aip://input/editor/decision
+    contentType: application/json
+    contractRef: schemas/editorDecision.schema.json
+    required: true
+
+  - ref: aip://output/final-comic
+    contentType: image/png
+```
+
+---
+
+## 18. Summary
+
+Artifacts answer the question:
+
+> **What data moves through the flow?**
+
+They are:
+
+* explicit
+* referenceable
+* content-aware
+* optionally contract-defined
+* reusable
+* traceable
+* provider-neutral
+
+Default artifacts may be lightweight human-readable content such as markdown, while structured contracts remain available when needed.
+
