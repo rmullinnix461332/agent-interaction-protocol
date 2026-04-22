@@ -376,6 +376,18 @@
         "timeout": {
           "type": "string",
           "minLength": 1
+        },
+        "scope": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["step", "subflow"]
+            },
+            "ref": {
+              "type": "string"
+            }
+          }
         }
       },
       "allOf": [
