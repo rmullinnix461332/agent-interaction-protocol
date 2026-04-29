@@ -6,7 +6,9 @@ import { usePolling } from '@/hooks/usePolling'
 import { EngineClient } from '@/api/client'
 import { FlowTable } from '@/components/flows/FlowTable'
 import { ConnectFlowDialog } from '@/components/flows/ConnectFlowDialog'
-import type { FlowListResponse } from '@/api/types'
+import { FlowYamlDialog } from '@/components/flows/FlowYamlDialog'
+import { FlowDiagramDialog } from '@/components/flows/FlowDiagramDialog'
+import type { FlowListResponse, ConnectedFlow } from '@/api/types'
 
 interface FlowsProps {
   onStartRun?: (flowId: string) => void
@@ -14,7 +16,9 @@ interface FlowsProps {
 
 export function Flows({ onStartRun }: FlowsProps) {
   const { activeEngine } = useEngines()
-  const [dialogOpen, setDialogOpen] = useState(false)
+  const [connectOpen, setConnectOpen] = useState(false)
+  const [yamlFlow, setYamlFlow] = useState<ConnectedFlow | null>(null)
+  const [diagramFlow, setDiagramFlow] = useState<ConnectedFlow | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const endpoint = activeEngine?.config.endpoint ?? ''
 
@@ -31,12 +35,8 @@ export function Flows({ onStartRun }: FlowsProps) {
   const handleConnect = async (flowJson: unknown) => {
     if (!activeEngine) return
     setActionError(null)
-    try {
-      await new EngineClient(activeEngine.config.endpoint).connectFlow(flowJson)
-      refresh()
-    } catch (err) {
-      throw err // Let dialog handle it
-    }
+    await new EngineClient(activeEngine.config.endpoint).connectFlow(flowJson)
+    refresh()
   }
 
   const handleDisconnect = async (flowId: string) => {
@@ -61,6 +61,26 @@ export function Flows({ onStartRun }: FlowsProps) {
     }
   }
 
+  const handleViewYaml = async (flowId: string) => {
+    if (!activeEngine) return
+    try {
+      const flow = await new EngineClient(activeEngine.config.endpoint).getFlow(flowId)
+      setYamlFlow(flow)
+    } catch (err) {
+      setActionError(String(err))
+    }
+  }
+
+  const handleViewDiagram = async (flowId: string) => {
+    if (!activeEngine) return
+    try {
+      const flow = await new EngineClient(activeEngine.config.endpoint).getFlow(flowId)
+      setDiagramFlow(flow)
+    } catch (err) {
+      setActionError(String(err))
+    }
+  }
+
   if (!activeEngine?.online) {
     return (
       <Box>
@@ -78,7 +98,7 @@ export function Flows({ onStartRun }: FlowsProps) {
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Typography variant="h5">Flows</Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => setDialogOpen(true)}>
+        <Button variant="contained" startIcon={<AddIcon />} onClick={() => setConnectOpen(true)}>
           Connect Flow
         </Button>
       </Box>
@@ -92,13 +112,25 @@ export function Flows({ onStartRun }: FlowsProps) {
           flows={data?.flows ?? []}
           onRun={handleRun}
           onDisconnect={handleDisconnect}
+          onViewYaml={handleViewYaml}
+          onViewDiagram={handleViewDiagram}
         />
       )}
 
       <ConnectFlowDialog
-        open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
+        open={connectOpen}
+        onClose={() => setConnectOpen(false)}
         onConnect={handleConnect}
+      />
+      <FlowYamlDialog
+        open={!!yamlFlow}
+        onClose={() => setYamlFlow(null)}
+        flow={yamlFlow}
+      />
+      <FlowDiagramDialog
+        open={!!diagramFlow}
+        onClose={() => setDiagramFlow(null)}
+        flow={diagramFlow}
       />
     </Box>
   )

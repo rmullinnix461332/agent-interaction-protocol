@@ -1,5 +1,6 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import path from 'path'
+import fs from 'fs'
 import { registerConfigHandlers } from './config-store'
 import { registerEngineManagerHandlers, stopAllEngines } from './engine-manager'
 
@@ -30,6 +31,21 @@ function createWindow() {
 app.whenReady().then(() => {
   registerConfigHandlers()
   registerEngineManagerHandlers()
+
+  ipcMain.handle('file:openFlow', async () => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      filters: [
+        { name: 'Flow Files', extensions: ['yaml', 'yml', 'json'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+      properties: ['openFile'],
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    const filePath = result.filePaths[0]
+    const content = fs.readFileSync(filePath, 'utf-8')
+    return { filePath, content }
+  })
+
   createWindow()
 })
 

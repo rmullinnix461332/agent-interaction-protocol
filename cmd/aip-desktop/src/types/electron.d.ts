@@ -9,7 +9,6 @@ declare global {
       removeEngine: (engineId: string) => Promise<EngineConfig[]>
       updateEngine: (engine: EngineConfig) => Promise<EngineConfig[]>
 
-      // Engine process management
       startEngine: (opts: {
         engineId: string
         binaryPath: string
@@ -19,6 +18,9 @@ declare global {
       }) => Promise<{ status: string; port?: number; error?: string }>
       stopEngine: (engineId: string) => Promise<{ status: string }>
       engineStatus: (engineId: string) => Promise<{ status: string; port?: number; error?: string }>
+
+      // File dialogs
+      openFlowFile: () => Promise<{ filePath: string; content: string } | null>
     }
   }
 }

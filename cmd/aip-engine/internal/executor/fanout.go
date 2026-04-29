@@ -10,8 +10,12 @@ import (
 // executeFanOutStep spawns parallel execution of child steps
 func (e *LocalExecutor) executeFanOutStep(rc *RunContext, step *models.Step, runArtifacts map[string]*models.RuntimeArtifact) *StepResult {
 	run := rc.Run
+
+	rc.RunMu.Lock()
 	run.CurrentStep = step.ID
 	run.SetStepStatus(step.ID, "running", "")
+	rc.RunMu.Unlock()
+
 	e.emitEvent(run.ID, models.EventTypeStepStarted, step.ID, fmt.Sprintf("FanOut started: %d parallel steps", len(step.Steps)))
 	e.saveRun(run)
 
@@ -55,6 +59,19 @@ func (e *LocalExecutor) executeFanOutStep(rc *RunContext, step *models.Step, run
 
 			res := e.executeStep(rc, cs, snapshot)
 
+			// Update child step status on the run (synchronized)
+			rc.RunMu.Lock()
+			if res.Status == "failed" {
+				errMsg := ""
+				if res.Error != nil {
+					errMsg = res.Error.Message
+				}
+				run.SetStepStatus(cs.ID, "failed", errMsg)
+			} else {
+				run.SetStepStatus(cs.ID, "completed", "")
+			}
+			rc.RunMu.Unlock()
+
 			// Merge produced artifacts back
 			artMu.Lock()
 			for _, art := range res.Artifacts {
@@ -69,6 +86,7 @@ func (e *LocalExecutor) executeFanOutStep(rc *RunContext, step *models.Step, run
 	}
 
 	wg.Wait()
+	e.saveRun(run)
 
 	// Check results
 	var allArtifacts []models.ProducedArtifact

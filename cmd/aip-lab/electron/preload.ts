@@ -41,4 +41,38 @@ contextBridge.exposeInMainWorld('electronAPI', {
   mcpGetAgent: (data: { serverName: string; agentId: string }) => ipcRenderer.invoke('mcp:getAgent', data),
   mcpRegisterAgent: (data: { serverName: string; agent: unknown }) => ipcRenderer.invoke('mcp:registerAgent', data),
   mcpUnregisterAgent: (data: { serverName: string; agentId: string }) => ipcRenderer.invoke('mcp:unregisterAgent', data),
+  mcpConnectHttp: (data: { name: string; url: string }) => ipcRenderer.invoke('mcp:connectHttp', data),
+  mcpCall: (data: { serverName: string; method: string; params: unknown }) => ipcRenderer.invoke('mcp:call', data),
+
+  // Workspace
+  workspaceGetFolders: (): Promise<string[]> => ipcRenderer.invoke('workspace:getFolders'),
+  workspaceAddFolder: (): Promise<string | null> => ipcRenderer.invoke('workspace:addFolder'),
+  workspaceRemoveFolder: (folderPath: string): Promise<string[]> => ipcRenderer.invoke('workspace:removeFolder', folderPath),
+  workspaceCloseAll: (): Promise<string[]> => ipcRenderer.invoke('workspace:closeAll'),
+  workspaceGetTree: (folderPath: string): Promise<any[]> => ipcRenderer.invoke('workspace:getTree', folderPath),
+  workspaceReadFile: (filePath: string): Promise<{ filePath: string; content: string; display: string | null } | { error: string }> =>
+    ipcRenderer.invoke('workspace:readFile', filePath),
+
+  // Menu events (main → renderer)
+  onMenuAction: (callback: (action: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, action: string) => callback(action)
+    // Listen for all menu: channels
+    const channels = [
+      'menu:new', 'menu:open', 'menu:save', 'menu:saveAs',
+      'menu:addFolder', 'menu:closeWorkspace',
+      'menu:undo', 'menu:redo', 'menu:find', 'menu:delete', 'menu:duplicate',
+      'menu:runStart', 'menu:runPause', 'menu:runStop',
+      'menu:viewCanvas', 'menu:viewYaml', 'menu:viewSplit',
+      'menu:toggleChat', 'menu:toggleSidePanel', 'menu:toggleTrace',
+      'menu:welcome', 'menu:about', 'menu:settings',
+    ]
+    for (const ch of channels) {
+      ipcRenderer.on(ch, (_e) => callback(ch))
+    }
+    return () => {
+      for (const ch of channels) {
+        ipcRenderer.removeAllListeners(ch)
+      }
+    }
+  },
 })

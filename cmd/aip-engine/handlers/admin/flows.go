@@ -108,6 +108,30 @@ func ConnectFlowHandler(fs *store.FileStore, validator *validation.Validator) ht
 			return
 		}
 
+		// Save participant bindings from provider binding
+		if flow.ProviderBinding != nil {
+			for _, binding := range flow.ProviderBinding.ParticipantBindings {
+				fs.ParticipantStore().Save(&binding)
+			}
+		}
+
+		// Also register flow-level participants that have no explicit binding
+		for _, p := range flow.Participants {
+			_, err := fs.ParticipantStore().Get(p.ID)
+			if err != nil {
+				// No binding exists, create a default one
+				fs.ParticipantStore().Save(&models.ParticipantBinding{
+					ParticipantRef: p.ID,
+					ProviderTarget: "echo",
+					Config: map[string]any{
+						"kind":  string(p.Kind),
+						"title": p.Title,
+						"flow":  flow.Metadata.Name,
+					},
+				})
+			}
+		}
+
 		respondJSON(w, http.StatusCreated, types.FlowSummary{
 			ID:          connected.Metadata.Name,
 			Name:        connected.Metadata.Name,
@@ -130,10 +154,15 @@ func DeleteFlowHandler(fs *store.FileStore) http.HandlerFunc {
 		}
 
 		// Check if flow exists
-		_, err := fs.FlowStore().Get(flowID)
+		flow, err := fs.FlowStore().Get(flowID)
 		if err != nil {
 			respondError(w, http.StatusNotFound, "FLOW_NOT_FOUND", "Flow not found: "+flowID)
 			return
+		}
+
+		// Remove participant bindings from this flow
+		for _, p := range flow.Participants {
+			fs.ParticipantStore().Delete(p.ID)
 		}
 
 		// Delete flow

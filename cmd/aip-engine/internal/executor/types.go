@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"sync"
 
 	"github.com/example/aip-engine/internal/models"
 )
@@ -45,4 +46,5 @@ type RunContext struct {
 	Run      *models.Run
 	Flow     *models.ConnectedFlow
 	ResumeCh chan *models.ResumePayload // Channel for await/resume signaling
+	RunMu    sync.Mutex                 // Protects Run state during concurrent access
 }

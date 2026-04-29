@@ -96,7 +96,7 @@ export interface ConnectedFlow {
   metadata: { name: string; title?: string; version?: string; description?: string }
   participants: { id: string; kind: string; title?: string }[]
   artifacts: { ref: string; title?: string; contentType?: string }[]
-  steps: { id: string; type: string; participantRef?: string; dependsOn?: string[] }[]
+  steps: { id: string; type: string; participantRef?: string; dependsOn?: string[]; steps?: string[] }[]
   installedAt: string
   lastRunAt?: string
   runCount: number

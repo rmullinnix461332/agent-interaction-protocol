@@ -4,15 +4,19 @@ import {
 } from '@mui/material'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import DeleteIcon from '@mui/icons-material/Delete'
+import CodeIcon from '@mui/icons-material/Code'
+import AccountTreeIcon from '@mui/icons-material/AccountTree'
 import type { FlowSummary } from '@/api/types'
 
 interface FlowTableProps {
   flows: FlowSummary[]
   onRun: (flowId: string) => void
   onDisconnect: (flowId: string) => void
+  onViewYaml: (flowId: string) => void
+  onViewDiagram: (flowId: string) => void
 }
 
-export function FlowTable({ flows, onRun, onDisconnect }: FlowTableProps) {
+export function FlowTable({ flows, onRun, onDisconnect, onViewYaml, onViewDiagram }: FlowTableProps) {
   return (
     <TableContainer component={Paper} variant="outlined">
       <Table size="small">
@@ -44,6 +48,16 @@ export function FlowTable({ flows, onRun, onDisconnect }: FlowTableProps) {
                 {flow.lastRunAt ? new Date(flow.lastRunAt).toLocaleString() : '—'}
               </TableCell>
               <TableCell align="right">
+                <Tooltip title="View YAML">
+                  <IconButton size="small" onClick={() => onViewYaml(flow.id)}>
+                    <CodeIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="View Diagram">
+                  <IconButton size="small" onClick={() => onViewDiagram(flow.id)}>
+                    <AccountTreeIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
                 <Tooltip title="Run now">
                   <IconButton size="small" color="primary" onClick={() => onRun(flow.id)}>
                     <PlayArrowIcon fontSize="small" />

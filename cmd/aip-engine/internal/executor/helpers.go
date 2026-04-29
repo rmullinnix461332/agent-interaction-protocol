@@ -116,3 +116,54 @@ func toFloat64(v any) (float64, bool) {
 		return 0, false
 	}
 }
+
+// mapProducedArtifacts maps adapter output artifacts to the step's declared produces refs.
+// If the step declares produces refs, the adapter output content is assigned to those refs.
+// Any adapter artifacts that don't map to a declared ref are also included.
+// If the adapter produces nothing but the step declares produces, placeholder artifacts are created.
+func mapProducedArtifacts(step *models.Step, adapterArtifacts []models.ProducedArtifact) []models.ProducedArtifact {
+	if len(step.Produces) == 0 {
+		// No declared produces — return adapter output as-is
+		return adapterArtifacts
+	}
+
+	if len(adapterArtifacts) == 0 {
+		// Adapter produced nothing — create placeholders for declared refs
+		var result []models.ProducedArtifact
+		for _, ref := range step.Produces {
+			result = append(result, models.ProducedArtifact{
+				Ref:         ref,
+				ContentType: "application/json",
+				Content:     []byte(`{"_placeholder":true,"step":"` + step.ID + `"}`),
+			})
+		}
+		return result
+	}
+
+	var result []models.ProducedArtifact
+
+	// Map declared produces refs to adapter output content
+	for i, ref := range step.Produces {
+		var source *models.ProducedArtifact
+		if i < len(adapterArtifacts) {
+			source = &adapterArtifacts[i]
+		} else {
+			// More declared refs than adapter outputs — use the last adapter output
+			source = &adapterArtifacts[len(adapterArtifacts)-1]
+		}
+
+		result = append(result, models.ProducedArtifact{
+			Ref:         ref,
+			ContentType: source.ContentType,
+			Content:     source.Content,
+			Metadata:    source.Metadata,
+		})
+	}
+
+	// Also include any extra adapter artifacts beyond the declared count
+	if len(adapterArtifacts) > len(step.Produces) {
+		result = append(result, adapterArtifacts[len(step.Produces):]...)
+	}
+
+	return result
+}

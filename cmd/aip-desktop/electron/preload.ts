@@ -27,4 +27,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('engine:stop', engineId),
   engineStatus: (engineId: string): Promise<{ status: string; port?: number; error?: string }> =>
     ipcRenderer.invoke('engine:status', engineId),
+
+  // File dialogs
+  openFlowFile: (): Promise<{ filePath: string; content: string } | null> =>
+    ipcRenderer.invoke('file:openFlow'),
 })

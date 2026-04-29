@@ -36,6 +36,27 @@ interface ElectronAPI {
   mcpGetAgent: (data: { serverName: string; agentId: string }) => Promise<{ agent: unknown; error: string | null }>
   mcpRegisterAgent: (data: { serverName: string; agent: unknown }) => Promise<{ success: boolean; error: string | null }>
   mcpUnregisterAgent: (data: { serverName: string; agentId: string }) => Promise<{ success: boolean; error: string | null }>
+  mcpConnectHttp: (data: { name: string; url: string }) => Promise<{ success: boolean; error: string | null }>
+  mcpCall: (data: { serverName: string; method: string; params: unknown }) => Promise<{ result: unknown; error: string | null }>
+
+  // Menu events
+  onMenuAction: (callback: (action: string) => void) => (() => void) | undefined
+
+  // Workspace
+  workspaceGetFolders: () => Promise<string[]>
+  workspaceAddFolder: () => Promise<string | null>
+  workspaceRemoveFolder: (folderPath: string) => Promise<string[]>
+  workspaceCloseAll: () => Promise<string[]>
+  workspaceGetTree: (folderPath: string) => Promise<FileTreeNode[]>
+  workspaceReadFile: (filePath: string) => Promise<{ filePath: string; content: string; display: string | null } | { error: string }>
+}
+
+interface FileTreeNode {
+  name: string
+  path: string
+  type: 'file' | 'directory'
+  children?: FileTreeNode[]
+  gitStatus?: string | null
 }
 
 interface Window {

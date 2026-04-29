@@ -290,8 +290,12 @@ func (e *LocalExecutor) executeStep(rc *RunContext, step *models.Step, runArtifa
 // executeActionStep executes a single action step
 func (e *LocalExecutor) executeActionStep(rc *RunContext, step *models.Step, runArtifacts map[string]*models.RuntimeArtifact) *StepResult {
 	run := rc.Run
+
+	rc.RunMu.Lock()
 	run.CurrentStep = step.ID
 	run.SetStepStatus(step.ID, "running", "")
+	rc.RunMu.Unlock()
+
 	e.emitEvent(run.ID, models.EventTypeStepStarted, step.ID, "Step started")
 	e.saveRun(run)
 
@@ -342,10 +346,13 @@ func (e *LocalExecutor) executeActionStep(rc *RunContext, step *models.Step, run
 		}
 	}
 
+	// Map adapter output to declared produces refs
+	produced := mapProducedArtifacts(step, output.Artifacts)
+
 	return &StepResult{
 		StepID:    step.ID,
 		Status:    "completed",
-		Artifacts: output.Artifacts,
+		Artifacts: produced,
 	}
 }
 

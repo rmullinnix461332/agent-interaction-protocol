@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Menu } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { registerLLMHandlers } from './llm-service'
@@ -6,6 +6,8 @@ import { registerSettingsHandlers } from './settings-service'
 import { registerGitHandlers } from './git-service'
 import { registerCLIHandlers } from './cli-bridge'
 import { registerMCPHandlers } from './mcp-service'
+import { registerWorkspaceHandlers } from './workspace-service'
+import { buildAppMenu } from './menu'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -29,6 +31,10 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
   }
+
+  // Set application menu
+  const menu = buildAppMenu(mainWindow)
+  Menu.setApplicationMenu(menu)
 }
 
 app.whenReady().then(() => {
@@ -37,6 +43,7 @@ app.whenReady().then(() => {
   registerGitHandlers()
   registerCLIHandlers()
   registerMCPHandlers()
+  registerWorkspaceHandlers()
   createWindow()
 })
 

@@ -1,5 +1,7 @@
 import { ipcMain } from 'electron'
 import { spawn, type ChildProcess } from 'child_process'
+import https from 'https'
+import http from 'http'
 
 interface MCPServerConfig {
   name: string
@@ -12,15 +14,17 @@ interface MCPConnection {
   config: MCPServerConfig
   process: ChildProcess | null
   connected: boolean
+  transport: 'stdio' | 'http'
+  httpUrl?: string
+  sessionId?: string // MCP session token from server
 }
 
 const connections = new Map<string, MCPConnection>()
 
-// Simple JSON-RPC over stdio for MCP
-async function callMCP(serverName: string, method: string, params: unknown): Promise<unknown> {
-  const conn = connections.get(serverName)
-  if (!conn || !conn.process || !conn.connected) {
-    throw new Error(`MCP server "${serverName}" not connected`)
+// JSON-RPC over stdio
+async function callMCPStdio(conn: MCPConnection, method: string, params: unknown): Promise<unknown> {
+  if (!conn.process || !conn.connected) {
+    throw new Error(`MCP server "${conn.config.name}" not connected`)
   }
 
   return new Promise((resolve, reject) => {
@@ -53,6 +57,145 @@ async function callMCP(serverName: string, method: string, params: unknown): Pro
   })
 }
 
+// JSON-RPC over HTTP with SSE transport (MCP Streamable HTTP)
+// Uses Node http/https directly to avoid Electron renderer fetch issues
+async function callMCPHttp(conn: MCPConnection, method: string, params: unknown): Promise<unknown> {
+  if (!conn.httpUrl) throw new Error('No HTTP URL configured')
+
+  const id = Date.now()
+  const body = JSON.stringify({ jsonrpc: '2.0', id, method, params })
+
+  return new Promise((resolve, reject) => {
+    const url = new URL(conn.httpUrl!)
+    const transport = url.protocol === 'https:' ? https : http
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Accept': 'text/event-stream, application/json',
+      'Content-Length': String(Buffer.byteLength(body)),
+    }
+    if (conn.sessionId) {
+      headers['Mcp-Session'] = conn.sessionId
+    }
+
+    const req = transport.request({
+      hostname: url.hostname,
+      port: url.port || (url.protocol === 'https:' ? 443 : 80),
+      path: url.pathname + url.search,
+      method: 'POST',
+      headers,
+    }, (res) => {
+      // Capture session ID
+      const sessionHeader = res.headers['mcp-session']
+      if (sessionHeader) {
+        conn.sessionId = Array.isArray(sessionHeader) ? sessionHeader[0] : sessionHeader
+      }
+
+      let data = ''
+      res.on('data', (chunk: Buffer) => { data += chunk.toString() })
+      res.on('end', () => {
+        if (res.statusCode && res.statusCode >= 400) {
+          reject(new Error(`HTTP ${res.statusCode}: ${data}`))
+          return
+        }
+
+        const contentType = res.headers['content-type'] || ''
+
+        // Handle SSE response
+        if (contentType.includes('text/event-stream')) {
+          try {
+            const result = parseSseData(data, id)
+            resolve(result)
+          } catch (err) {
+            reject(err)
+          }
+          return
+        }
+
+        // Handle plain JSON response
+        try {
+          const response = JSON.parse(data)
+          if (response.error) {
+            reject(new Error(response.error.message || JSON.stringify(response.error)))
+          } else {
+            resolve(response.result)
+          }
+        } catch (err) {
+          reject(new Error(`Failed to parse response: ${data.slice(0, 200)}`))
+        }
+      })
+    })
+
+    req.on('error', reject)
+    req.setTimeout(30000, () => { req.destroy(); reject(new Error('Request timeout')) })
+    req.write(body)
+    req.end()
+  })
+}
+
+// Parse SSE data and extract the JSON-RPC response
+function parseSseData(text: string, expectedId: number): unknown {
+  const lines = text.split('\n')
+
+  for (const line of lines) {
+    if (!line.startsWith('data: ')) continue
+    const data = line.slice(6).trim()
+    if (!data || data === '[DONE]') continue
+
+    try {
+      const parsed = JSON.parse(data)
+      if (parsed.jsonrpc === '2.0') {
+        if (parsed.error) {
+          throw new Error(parsed.error.message || JSON.stringify(parsed.error))
+        }
+        return parsed.result
+      }
+    } catch (e) {
+      if (e instanceof SyntaxError) continue
+      throw e
+    }
+  }
+
+  throw new Error('No JSON-RPC response found in SSE stream')
+}
+
+// Dispatch to the right transport
+async function callMCP(serverName: string, method: string, params: unknown): Promise<unknown> {
+  const conn = connections.get(serverName)
+  if (!conn || !conn.connected) {
+    throw new Error(`MCP server "${serverName}" not connected`)
+  }
+
+  if (conn.transport === 'http') {
+    return callMCPHttp(conn, method, params)
+  }
+  return callMCPStdio(conn, method, params)
+}
+
+// Simple HTTP GET that returns parsed JSON (used to proxy fetches from renderer)
+function httpGetJson(url: string): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(url)
+    const transport = parsedUrl.protocol === 'https:' ? https : http
+
+    transport.get(url, { headers: { 'Accept': 'application/json' } }, (res) => {
+      let data = ''
+      res.on('data', (chunk: Buffer) => { data += chunk.toString() })
+      res.on('end', () => {
+        if (res.statusCode && res.statusCode >= 400) {
+          reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 200)}`))
+          return
+        }
+        try {
+          resolve(JSON.parse(data))
+        } catch {
+          reject(new Error(`Invalid JSON from ${url}`))
+        }
+      })
+    }).on('error', reject)
+  })
+}
+
 export function registerMCPHandlers() {
   ipcMain.handle('mcp:connect', async (_event, config: MCPServerConfig) => {
     try {
@@ -65,7 +208,7 @@ export function registerMCPHandlers() {
       const env = { ...process.env, ...(config.env || {}) }
       const proc = spawn(config.command, config.args, { env, stdio: ['pipe', 'pipe', 'pipe'] })
 
-      const conn: MCPConnection = { config, process: proc, connected: true }
+      const conn: MCPConnection = { config, process: proc, connected: true, transport: 'stdio' }
       connections.set(config.name, conn)
 
       proc.on('exit', () => { conn.connected = false })
@@ -73,6 +216,42 @@ export function registerMCPHandlers() {
 
       // Wait briefly for process to start
       await new Promise((r) => setTimeout(r, 500))
+
+      return { success: true, error: null }
+    } catch (err: any) {
+      return { success: false, error: err.message }
+    }
+  })
+
+  // Connect to an HTTP-based MCP server (JSON-RPC over HTTP POST)
+  ipcMain.handle('mcp:connectHttp', async (_event, { name, url }: { name: string; url: string }) => {
+    try {
+      // Test connectivity with an initialize or tools/list call
+      const conn: MCPConnection = {
+        config: { name, command: '', args: [] },
+        process: null,
+        connected: true,
+        transport: 'http',
+        httpUrl: url,
+      }
+      connections.set(name, conn)
+
+      // Verify the server responds
+      try {
+        await callMCPHttp(conn, 'initialize', {
+          protocolVersion: '2024-11-05',
+          capabilities: {},
+          clientInfo: { name: 'aip-lab', version: '0.1.0' },
+        })
+      } catch {
+        // Some servers don't require initialize, try tools/list directly
+        try {
+          await callMCPHttp(conn, 'tools/list', {})
+        } catch (err: any) {
+          connections.delete(name)
+          return { success: false, error: `Failed to connect: ${err.message}` }
+        }
+      }
 
       return { success: true, error: null }
     } catch (err: any) {
@@ -101,6 +280,17 @@ export function registerMCPHandlers() {
   ipcMain.handle('mcp:call', async (_event, { serverName, method, params }: {
     serverName: string; method: string; params: unknown
   }) => {
+    // Special handler: generic HTTP JSON fetch (avoids CORS from renderer)
+    if (serverName === '__http_fetch__' && method === '__fetch_json__') {
+      try {
+        const { url } = params as { url: string }
+        const data = await httpGetJson(url)
+        return { result: data, error: null }
+      } catch (err: any) {
+        return { result: null, error: err.message }
+      }
+    }
+
     try {
       const result = await callMCP(serverName, method, params)
       return { result, error: null }
