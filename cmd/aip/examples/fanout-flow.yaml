@@ -1,0 +1,85 @@
+apiVersion: aip/v0.1
+kind: Flow
+metadata:
+  name: fanout-example
+  title: Fan-Out Example
+  version: "1.0"
+  description: Demonstrates parallel execution and fan-in
+
+participants:
+  - id: planner
+    kind: agent
+    title: Planner
+    description: Plans the work
+
+  - id: writer-a
+    kind: agent
+    title: Writer A
+    description: Writes section A
+
+  - id: writer-b
+    kind: agent
+    title: Writer B
+    description: Writes section B
+
+  - id: editor
+    kind: agent
+    title: Editor
+    description: Merges and edits
+
+artifacts:
+  - ref: aip://artifact/plan
+    producer: planner
+    consumers: [writer-a, writer-b]
+
+  - ref: aip://artifact/section-a
+    producer: writer-a
+    consumers: [editor]
+
+  - ref: aip://artifact/section-b
+    producer: writer-b
+    consumers: [editor]
+
+steps:
+  - id: plan
+    type: action
+    title: Plan
+    participantRef: planner
+    produces:
+      - aip://artifact/plan
+
+  - id: write-a
+    type: action
+    title: Write A
+    participantRef: writer-a
+    dependsOn: [plan]
+    consumes:
+      - aip://artifact/plan
+    produces:
+      - aip://artifact/section-a
+
+  - id: write-b
+    type: action
+    title: Write B
+    participantRef: writer-b
+    dependsOn: [plan]
+    consumes:
+      - aip://artifact/plan
+    produces:
+      - aip://artifact/section-b
+
+  - id: edit
+    type: action
+    title: Edit
+    participantRef: editor
+    dependsOn: [write-a, write-b]
+    consumes:
+      - aip://artifact/section-a
+      - aip://artifact/section-b
+
+  - id: done
+    type: exit
+    title: Done
+    dependsOn: [edit]
+    exit:
+      status: success
